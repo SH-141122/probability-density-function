@@ -60,11 +60,11 @@ th{background:#f0f3f6}th:first-child,td:first-child{text-align:center}
     </label>
     <label style="display:flex;align-items:center;gap:7px">
       <input id="showNormal" type="checkbox">
-      正規分布曲線を表示
+      分布曲線を表示
     </label>
   </div>
   <canvas id="histogram" aria-label="階級幅を変更したヒストグラム"></canvas>
-  <p class="note">階級の境界はデータの最小値に合わせて自動設定します。赤い曲線は平均値と標準偏差から計算した正規分布曲線（参考）です。</p>
+  <p class="note">階級の境界はデータの最小値に合わせて自動設定します。赤い曲線は平均値と標準偏差から計算した分布曲線（参考）です。</p>
 </div>
 
 <div class="panel">
@@ -234,7 +234,7 @@ function drawHistogram(canvasId, width, compact=false, showNormal=true) {
     if(showNormal) {
       ctx.fillStyle="#d94841"; ctx.fillRect(W-150,12,16,3);
       ctx.fillStyle="#444"; ctx.textAlign="left";
-      ctx.fillText("正規分布曲線（参考）",W-128,18);
+      ctx.fillText("分布曲線（参考）",W-128,18);
     }
   }
 }
