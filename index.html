@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>階級の幅とヒストグラム</title>
+<style>
+:root{font-family:Arial,"Meiryo",sans-serif;color:#222;background:#fff}
+body{max-width:1100px;margin:20px auto;padding:0 16px;line-height:1.55}
+h1{font-size:25px}h2{font-size:19px;margin:0 0 12px}
+.panel{border:1px solid #ddd;border-radius:10px;padding:16px;margin:14px 0}
+.controls{display:flex;flex-wrap:wrap;gap:18px;align-items:center}
+input[type=number]{width:100px;padding:8px;font-size:16px}
+input[type=range]{width:min(360px,60vw);vertical-align:middle}
+button{padding:9px 14px;border:0;border-radius:6px;background:#1769aa;color:white;cursor:pointer}
+button:hover{filter:brightness(.92)}
+.stats{display:flex;gap:12px;flex-wrap:wrap}
+.stat{background:#f2f6fa;border-radius:8px;padding:12px;flex:1;min-width:130px}
+.stat strong{font-size:21px;display:block;margin-top:5px}
+canvas{width:100%;height:340px;display:block}
+table{border-collapse:collapse;width:100%;margin-top:12px;font-size:14px}
+th,td{border:1px solid #ccc;padding:7px;text-align:right;white-space:nowrap}
+th{background:#f0f3f6}th:first-child,td:first-child{text-align:center}
+.note{color:#555;font-size:13px}
+.comparison{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.comparison canvas{height:210px}
+.error{color:#b00020;font-weight:bold}
+@media(max-width:600px){body{padding:0 10px}.panel{padding:12px}.stat{min-width:110px}}
+</style>
+</head>
+<body>
+<h1>階級の幅とヒストグラム</h1>
+<p>データ数を指定して身長データを自動生成し、階級の幅によってヒストグラムの形がどのように変わるかを調べましょう。</p>
+
+<div class="panel">
+  <h2>1. サンプルデータの作成</h2>
+  <div class="controls">
+    <label>データ数：
+      <input id="dataCount" type="number" min="1" max="10000" step="1" value="5000"> 人
+    </label>
+    <button id="generate">サンプルデータを作成</button>
+  </div>
+  <p class="note">平均約165cm、標準偏差約6cmを想定した身長データをランダムに生成します。生成するたびにデータが変わります（1～10000人）。</p>
+  <p id="message" class="error" aria-live="polite"></p>
+</div>
+
+<div class="stats">
+  <div class="stat">データ数<strong id="n">-- 人</strong></div>
+  <div class="stat">平均身長<strong id="mean">-- cm</strong></div>
+  <div class="stat">標準偏差<strong id="sd">-- cm</strong></div>
+  <div class="stat">最小値～最大値<strong id="range">--</strong></div>
+</div>
+
+<div class="panel">
+  <h2>2. 階級の幅を変更する</h2>
+  <div class="controls">
+    <label>階級の幅：
+      <input id="width" type="range" min="0.1" max="5" step="0.1" value="5">
+      <strong id="widthText">5.0 cm</strong>
+    </label>
+    <label style="display:flex;align-items:center;gap:7px">
+      <input id="showNormal" type="checkbox">
+      正規分布曲線を表示
+    </label>
+  </div>
+  <canvas id="histogram" aria-label="階級幅を変更したヒストグラム"></canvas>
+  <p class="note">階級の境界はデータの最小値に合わせて自動設定します。赤い曲線は平均値と標準偏差から計算した正規分布曲線（参考）です。</p>
+</div>
+
+<div class="panel">
+  <h2>3. 度数分布表</h2>
+  <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>階級（cm）</th><th>度数</th><th>相対度数</th><th>累積度数</th></tr></thead>
+      <tbody id="frequencyTable"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>4. 階級の幅による比較</h2>
+  <p>同じデータを使い、階級の幅を0.5cm・1cm・2cm・5cmに変えたヒストグラムを比較します。</p>
+  <div class="comparison">
+    <div><strong>階級の幅：0.5cm</strong><canvas id="compare0.5"></canvas></div>
+    <div><strong>階級の幅：1cm</strong><canvas id="compare1"></canvas></div>
+    <div><strong>階級の幅：2cm</strong><canvas id="compare2"></canvas></div>
+    <div><strong>階級の幅：5cm</strong><canvas id="compare5"></canvas></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+let data = [];
+
+function normalRandom() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+function generateData() {
+  const input = document.getElementById("dataCount");
+  const n = Math.floor(Number(input.value));
+  const message = document.getElementById("message");
+
+  if (!Number.isFinite(n) || n < 1 || n > 10000) {
+    message.textContent = "データ数は1～10000の整数で指定してください。";
+    return;
+  }
+  input.value = n;
+  message.textContent = "";
+
+  data = Array.from({length:n}, () => {
+    // 平均165cm、標準偏差6cmを想定。身長は140～190cmに収める。
+    const h = Math.max(140, Math.min(190, 165 + 6 * normalRandom()));
+    return Math.round(h * 10) / 10;
+  });
+  updateAll();
+}
+
+function getStats() {
+  const n = data.length;
+  const mean = data.reduce((a,b) => a+b,0) / n;
+  const variance = data.reduce((a,b) => a+(b-mean)**2,0) / n;
+  return {
+    n, mean, sd: Math.sqrt(variance),
+    min: Math.min(...data), max: Math.max(...data)
+  };
+}
+
+function getBins(width) {
+  const s = getStats();
+  // 身長・階級幅を0.1cm単位の整数に変換し、浮動小数点誤差を避ける。
+  const widthT = Math.max(1, Math.round(width * 10));
+  const minT = Math.round(s.min * 10);
+  const maxT = Math.round(s.max * 10);
+  const startT = Math.floor(minT / widthT) * widthT;
+  const count = Math.floor((maxT - startT) / widthT) + 1;
+  const bins = [];
+
+  for (let i=0; i<count; i++) {
+    const loT = startT + i * widthT;
+    const hiT = loT + widthT;
+    const frequency = data.filter(value => {
+      const valueT = Math.round(value * 10);
+      // 最後の階級では、上端と一致する最大値も含める。
+      return valueT >= loT &&
+        (valueT < hiT || (i === count - 1 && valueT <= hiT));
+    }).length;
+    bins.push({lo:loT/10, hi:hiT/10, frequency});
+  }
+  return bins;
+}
+
+function fmt(x) {
+  return Number(x.toFixed(1)).toString();
+}
+
+function drawHistogram(canvasId, width, compact=false, showNormal=true) {
+  const canvas = document.getElementById(canvasId);
+  const rect = canvas.getBoundingClientRect();
+  const scale = window.devicePixelRatio || 1;
+  const cssHeight = compact ? 210 : 340;
+  const cssWidth = Math.max(280, rect.width);
+  canvas.width = Math.round(cssWidth * scale);
+  canvas.height = Math.round(cssHeight * scale);
+  canvas.style.height = cssHeight + "px";
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(scale,0,0,scale,0,0);
+
+  const W = cssWidth, H = cssHeight;
+  const margin = compact ? {l:38,r:10,t:12,b:35} : {l:55,r:18,t:20,b:45};
+  const plotW = W-margin.l-margin.r;
+  const plotH = H-margin.t-margin.b;
+  const s = getStats();
+  const bins = getBins(width);
+  const minX = bins[0].lo;
+  const maxX = bins[bins.length-1].hi;
+  const xRange = Math.max(0.1, maxX-minX);
+  const densities = bins.map(b => b.frequency/(s.n*width));
+  const maxDensity = Math.max(...densities, 0.001);
+  const yMax = Math.max(0.01, Math.ceil(maxDensity*1.15*100)/100);
+  const x = v => margin.l+(v-minX)/xRange*plotW;
+  const y = v => margin.t+plotH-v/yMax*plotH;
+
+  ctx.clearRect(0,0,W,H);
+  ctx.font = compact ? "10px Arial" : "12px Arial";
+  ctx.strokeStyle = "#ddd";
+  ctx.fillStyle = "#444";
+  ctx.lineWidth = 1;
+
+  for(let i=0;i<=4;i++) {
+    const val = yMax*i/4, yy = y(val);
+    ctx.beginPath(); ctx.moveTo(margin.l,yy); ctx.lineTo(W-margin.r,yy); ctx.stroke();
+    ctx.textAlign = "right";
+    ctx.fillText(val.toFixed(2),margin.l-6,yy+4);
+  }
+
+  bins.forEach(b => {
+    const left=x(b.lo), right=x(b.hi);
+    const top=y(b.frequency/(s.n*width));
+    ctx.fillStyle="#72aee6";
+    ctx.fillRect(left+0.4,top,Math.max(0.5,right-left-0.8),margin.t+plotH-top);
+    ctx.strokeStyle="#fff";
+    ctx.strokeRect(left+0.4,top,Math.max(0.5,right-left-0.8),margin.t+plotH-top);
+  });
+
+  if(showNormal && s.sd > 0) {
+    ctx.beginPath(); ctx.strokeStyle="#d94841"; ctx.lineWidth=compact?1.5:2;
+    for(let i=0;i<=200;i++) {
+      const xv=minX+xRange*i/200;
+      const z=(xv-s.mean)/s.sd;
+      const d=Math.exp(-0.5*z*z)/(s.sd*Math.sqrt(2*Math.PI));
+      if(i===0) ctx.moveTo(x(xv),y(d)); else ctx.lineTo(x(xv),y(d));
+    }
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle="#444"; ctx.beginPath();
+  ctx.moveTo(margin.l,margin.t); ctx.lineTo(margin.l,margin.t+plotH);
+  ctx.lineTo(W-margin.r,margin.t+plotH); ctx.stroke();
+
+  ctx.textAlign="center";
+  const tickStep = compact ? 10 : 5;
+  const firstTick = Math.ceil(minX/tickStep)*tickStep;
+  for(let v=firstTick;v<=maxX;v+=tickStep) ctx.fillText(v, x(v), H-margin.b+17);
+
+  if(!compact) {
+    ctx.fillText("身長（cm）",margin.l+plotW/2,H-7);
+    ctx.save(); ctx.translate(14,margin.t+plotH/2); ctx.rotate(-Math.PI/2);
+    ctx.fillText("相対度数密度",0,0); ctx.restore();
+    if(showNormal) {
+      ctx.fillStyle="#d94841"; ctx.fillRect(W-150,12,16,3);
+      ctx.fillStyle="#444"; ctx.textAlign="left";
+      ctx.fillText("正規分布曲線（参考）",W-128,18);
+    }
+  }
+}
+
+function updateTable(width) {
+  const bins=getBins(width), n=data.length;
+  let cumulative=0;
+  document.getElementById("frequencyTable").innerHTML=bins.map((b,i)=>{
+    cumulative+=b.frequency;
+    const upperText = i===bins.length-1 ? "以下（最大値を含む）" : "未満";
+    return `<tr>
+      <td>${fmt(b.lo)}以上～${fmt(b.hi)}${upperText}</td>
+      <td>${b.frequency}</td>
+      <td>${(b.frequency/n).toFixed(4)}</td>
+      <td>${cumulative}</td>
+    </tr>`;
+  }).join("");
+}
+
+function updateAll() {
+  if(!data.length) return;
+  const s=getStats();
+  document.getElementById("n").textContent=s.n+"人";
+  document.getElementById("mean").textContent=s.mean.toFixed(2)+" cm";
+  document.getElementById("sd").textContent=s.sd.toFixed(2)+" cm";
+  document.getElementById("range").textContent=s.min.toFixed(1)+"～"+s.max.toFixed(1)+" cm";
+
+  const width=Number(document.getElementById("width").value);
+  document.getElementById("widthText").textContent=width.toFixed(1)+" cm";
+
+  const showNormal = document.getElementById("showNormal").checked;
+  drawHistogram("histogram",width,false,showNormal);
+  updateTable(width);
+  drawHistogram("compare0.5",0.5,true,showNormal);
+  drawHistogram("compare1",1,true,showNormal);
+  drawHistogram("compare2",2,true,showNormal);
+  drawHistogram("compare5",5,true,showNormal);
+}
+
+document.getElementById("generate").addEventListener("click",generateData);
+document.getElementById("width").addEventListener("input",updateAll);
+document.getElementById("showNormal").addEventListener("change",updateAll);
+window.addEventListener("resize",updateAll);
+generateData();
+</script>
+</body>
+</html>
